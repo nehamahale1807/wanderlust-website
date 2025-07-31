@@ -9,6 +9,24 @@ const wrapAsync = require("./utils/wrapAsync.js");
 const ExpressError = require('./utils/ExpressError.js');
 const {listingSchema} = require("./schema.js")
 
+
+const sampleListings = require("./init/data.js");
+
+
+main()
+.then(async () => {
+    console.log("MongoDB connection successful");
+
+    const count = await Listing.countDocuments({});
+    if (count === 0) {
+        await Listing.insertMany(sampleListings);
+        console.log("Sample data seeded into DB");
+    } else {
+        console.log("Listings already exist. No seeding needed.");
+    }
+})
+.catch(err => console.log("MongoDB connection error:", err));
+
 main()
 .then(()=> {
     console.log("connection successful");
@@ -34,16 +52,16 @@ async function main() {
 // });
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "ejs");
+app.engine("ejs", ejsMate); // if using ejs-mate
 app.use(express.urlencoded({ extended: true }));
 app.use(methodOverride("_method"))
-app.engine('ejs', ejsMate);
 app.use(express.static(path.join(__dirname,("/public"))));
 
 app.get("/", (req,res)=> {
     res.send("hii, i am root");
 });
 
-const validateListing = ((req,re,next)=> {
+const validateListing = ((req,res,next)=> {
     let {error} = listingSchema.validate(req.body);
     if(error){
         let errMsg = error.details.map((el) => el.message).join(",");
@@ -64,6 +82,14 @@ app.get("/listings/new",(req,res)=> {
     res.render("listings/new.ejs");
 });
 
+//edit
+app.get(
+    "/listings/:id/edit",wrapAsync(async(req, res)=> {
+    let {id} = req.params;
+    const listing = await Listing.findById(id);
+    res.render("listings/edit.ejs", {listing});
+}));
+
 //show
 app.get("/listings/:id",wrapAsync(async(req,res)=> {
     let {id} = req.params;
@@ -82,18 +108,10 @@ app.post(
     })
 );
 
-//edit
-app.get(
-    "/listings/:id/edit",wrapAsync(async(req, res)=> {
-    let {id} = req.params;
-    const listing = await Listing.findById(id);
-    res.render("listings/edit.ejs", {listing});
-}));
-
 //update
 app.put("/listings/:id",validateListing,wrapAsync(async(req, res)=> {
     if(!req.body.listing) {
-        throw new ExpressError(404,"send valis data for listing");
+        throw new ExpressError(404,"send valid data for listing");
     }
     let {id} = req.params;
     await Listing.findByIdAndUpdate(id,{...req.body.listing});
