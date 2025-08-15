@@ -1,3 +1,7 @@
+if(process.env.NODE_ENV != "production") {
+    require('dotenv').config();
+}
+
 const express = require ("express");
 const app= express();
 const mongoose = require("mongoose");
@@ -5,10 +9,17 @@ const Listing = require('./models/listing');
 const path = require("path");
 const methodOverride = require("method-override");
 const ejsMate = require("ejs-mate");
-const wrapAsync = require("./utils/wrapAsync.js");
 const ExpressError = require('./utils/ExpressError.js');
-const {listingSchema} = require("./schema.js")
+const session = require("express-session");
+const flash = require("connect-flash");
+const passport = require("passport");
+const LocalStrategy =  require("passport-local");
+const User = require("./models/user.js");
 
+
+const listingRouter = require ("./routes/listing.js");
+const reviewRouter = require ("./routes/review.js");
+const userRouter = require ("./routes/user.js");
 
 const sampleListings = require("./init/data.js");
 
@@ -37,19 +48,6 @@ async function main() {
   await mongoose.connect('mongodb://127.0.0.1:27017/wanderlust');
 }
 
-// app.get("/testListing", async (req,res)=> {
-//     let sampleListing = new Listing({
-//         title: "my new villa",
-//         description: " by the beach",
-//         price:1200,
-//         location:"calangute, Goa",
-//         country:"India",
-//     });
-
-//     await sampleListing.save();
-//     console.log("sample was saved");
-//     res.send("successful testing");
-// });
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "ejs");
 app.engine("ejs", ejsMate); // if using ejs-mate
@@ -57,74 +55,51 @@ app.use(express.urlencoded({ extended: true }));
 app.use(methodOverride("_method"))
 app.use(express.static(path.join(__dirname,("/public"))));
 
-app.get("/", (req,res)=> {
-    res.send("hii, i am root");
+// app.get("/", (req,res)=> {
+//     res.send("hii, i am root");
+// });
+
+const sessionOptions={
+    secret:"mySuperSecretCode",
+    resave: false,
+    saveUninitialized: true,
+    cookie:{
+        expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+    },
+};
+
+app.use(session(sessionOptions));
+app.use(flash());
+
+app.use(passport.initialize());
+app.use(passport.session());
+passport.use(new LocalStrategy(User.authenticate()));
+
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
+
+app.use((req,res,next)=>{
+    res.locals.success = req.flash ("success");
+    res.locals.error = req.flash ("error");
+    res.locals.currUser = req.user;
+    next();
 });
 
-const validateListing = ((req,res,next)=> {
-    let {error} = listingSchema.validate(req.body);
-    if(error){
-        let errMsg = error.details.map((el) => el.message).join(",");
-        throw new ExpressError(400,errMsg);
-    }else{
-        next();
-    }
-})
+// app.get("/demouser", async (req,res)=> {
+//     let fakeUser= new User({
+//         email: "student@gmail.com",
+//         username: "delta-student"
+//     });
 
-//index
-app.get ("/listings",wrapAsync(async(req,res)=> {
-    const allListings = await Listing.find({});
-    res.render("listings/index.ejs", {allListings});
-}));
+//     let registeredUser = await User.register(fakeUser,"helloworld");
+//     res.send(registeredUser);
+// });
 
-//new
-app.get("/listings/new",(req,res)=> {
-    res.render("listings/new.ejs");
-});
-
-//edit
-app.get(
-    "/listings/:id/edit",wrapAsync(async(req, res)=> {
-    let {id} = req.params;
-    const listing = await Listing.findById(id);
-    res.render("listings/edit.ejs", {listing});
-}));
-
-//show
-app.get("/listings/:id",wrapAsync(async(req,res)=> {
-    let {id} = req.params;
-    const listing = await Listing.findById(id);
-    res.render("listings/show.ejs", {listing});
-}));
-
-//create
-app.post(
-    "/listings", 
-    validateListing,
-    wrapAsync(async (req, res, next) => {
-        const newListing = new Listing(req.body.listing);
-        await newListing.save();
-        res.redirect("/listings");
-    })
-);
-
-//update
-app.put("/listings/:id",validateListing,wrapAsync(async(req, res)=> {
-    if(!req.body.listing) {
-        throw new ExpressError(404,"send valid data for listing");
-    }
-    let {id} = req.params;
-    await Listing.findByIdAndUpdate(id,{...req.body.listing});
-    res.redirect(`/listings/${id}`);
-}));
-
-//delete
-app.delete("/listings/:id",wrapAsync(async (req, res) => {
-    let { id } = req.params;
-    let deletedListing = await Listing.findByIdAndDelete(id);
-    console.log("Deleted listing:", deletedListing);
-    res.redirect("/listings");
-}));
+app.use("/listings", listingRouter);
+app.use("/listings/:id/reviews", reviewRouter);
+app.use("/",userRouter);
 
 app.all("*",(req, res, next)=> {
     next(new ExpressError(404,"page not found!"));

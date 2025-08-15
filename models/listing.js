@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
+const Review = require('./review.js');
 
 const listingSchema = new Schema({
   title: {
@@ -7,9 +8,12 @@ const listingSchema = new Schema({
     required: true,
   },
   description: {
-    type: String
+    type: String,
+    required: true,
   },
   image: {
+    // url: String,
+    // filename: String,
     filename: {
       type: String,
       default: "listingimage"
@@ -27,6 +31,22 @@ const listingSchema = new Schema({
   },
   country: {
     type: String
+  },
+  reviews: [
+    {
+      type: Schema.Types.ObjectId,
+      ref: "Review",
+    },
+  ],
+  owner: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "User"
+},
+});
+
+listingSchema.post("findOneAndDelete", async (listing) => {
+  if (listing) {
+    await Review.deleteMany({ _id: { $in: listing.reviews } });
   }
 });
 
